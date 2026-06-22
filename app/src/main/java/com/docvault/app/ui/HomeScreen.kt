@@ -1,5 +1,6 @@
 package com.docvault.app.ui
 
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,6 +28,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,37 +41,60 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.docvault.app.data.Document
 
+data class PendingFile(val uri: Uri, val fileName: String, val fileType: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(viewModel: DocumentViewModel) {
+fun HomeScreen(viewModel: DocumentViewModel, incomingUris: List<Uri> = emptyList()) {
     val context = LocalContext.current
     val documents by viewModel.documents.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
 
-    var pendingUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingFileType by remember { mutableStateOf("") }
-    var pendingFileName by remember { mutableStateOf("") }
+    var pendingFiles by remember { mutableStateOf<List<PendingFile>>(emptyList()) }
+    var currentPendingIndex by remember { mutableStateOf(0) }
     var showAddDialog by remember { mutableStateOf(false) }
     var documentToEdit by remember { mutableStateOf<Document?>(null) }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val mimeType = context.contentResolver.getType(uri) ?: ""
-            val fileType = if (mimeType == "application/pdf") "pdf" else "image"
-            val fileName = queryFileName(context, uri) ?: "document"
-            pendingUri = uri
-            pendingFileType = fileType
-            pendingFileName = fileName
-            showAddDialog = true
+    // Gallery se share karke aaye files handle karo
+    LaunchedEffect(incomingUris) {
+        if (incomingUris.isNotEmpty()) {
+            val files = incomingUris.mapNotNull { uri ->
+                val mimeType = context.contentResolver.getType(uri) ?: ""
+                val fileType = if (mimeType == "application/pdf") "pdf" else "image"
+                val fileName = queryFileName(context, uri) ?: "document"
+                PendingFile(uri, fileName, fileType)
+            }
+            if (files.isNotEmpty()) {
+                pendingFiles = files
+                currentPendingIndex = 0
+                showAddDialog = true
+            }
+        }
+    }
+
+    // Gallery + files dono dikhte hain, multiple select bhi hoga
+    val multipleFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val files = uris.mapNotNull { uri ->
+                val mimeType = context.contentResolver.getType(uri) ?: ""
+                val fileType = if (mimeType == "application/pdf") "pdf" else "image"
+                val fileName = queryFileName(context, uri) ?: "document"
+                PendingFile(uri, fileName, fileType)
+            }
+            if (files.isNotEmpty()) {
+                pendingFiles = files
+                currentPendingIndex = 0
+                showAddDialog = true
+            }
         }
     }
 
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { filePickerLauncher.launch(arrayOf("image/*", "application/pdf")) },
+                onClick = { multipleFilePicker.launch("*/*") },
                 shape = RoundedCornerShape(20.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Upload document")
@@ -123,23 +148,37 @@ fun HomeScreen(viewModel: DocumentViewModel) {
         }
     }
 
-    if (showAddDialog && pendingUri != null) {
+    // Ek ek karke dialog dikhao jab multiple files hain
+    if (showAddDialog && currentPendingIndex < pendingFiles.size) {
+        val current = pendingFiles[currentPendingIndex]
+        val total = pendingFiles.size
+        val dialogTitle = if (total > 1) "${currentPendingIndex + 1} of $total" else ""
+
         AddDocumentDialog(
-            suggestedName = pendingFileName,
+            suggestedName = current.fileName,
+            dialogSubtitle = dialogTitle,
             onConfirm = { name, tag ->
                 viewModel.addDocument(
-                    uri = pendingUri!!,
-                    originalFileName = pendingFileName,
+                    uri = current.uri,
+                    originalFileName = current.fileName,
                     customName = name,
                     tag = tag,
-                    fileType = pendingFileType
+                    fileType = current.fileType
                 )
-                showAddDialog = false
-                pendingUri = null
+                if (currentPendingIndex + 1 < pendingFiles.size) {
+                    currentPendingIndex++
+                } else {
+                    showAddDialog = false
+                    pendingFiles = emptyList()
+                }
             },
             onDismiss = {
-                showAddDialog = false
-                pendingUri = null
+                if (currentPendingIndex + 1 < pendingFiles.size) {
+                    currentPendingIndex++
+                } else {
+                    showAddDialog = false
+                    pendingFiles = emptyList()
+                }
             }
         )
     }
