@@ -16,12 +16,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
 
 @Composable
 fun AddDocumentDialog(
     suggestedName: String,
     suggestedTag: String = "",
     isEditing: Boolean = false,
+    dialogSubtitle: String = "",
     onConfirm: (name: String, tag: String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -31,7 +33,18 @@ fun AddDocumentDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(24.dp),
-        title = { Text(if (isEditing) "Edit document" else "Save document") },
+        title = {
+            Column {
+                Text(if (isEditing) "Edit document" else "Save document")
+                if (dialogSubtitle.isNotBlank()) {
+                    Text(
+                        dialogSubtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        },
         text = {
             Column {
                 OutlinedTextField(
@@ -60,7 +73,7 @@ fun AddDocumentDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Skip")
             }
         }
     )
